@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          stylish-haskell
-Version:       0.14.0.1
+Version:       0.14.0.2
 Synopsis:      Haskell code prettifier
 Homepage:      https://github.com/haskell/stylish-haskell
 License:       BSD-3-Clause
@@ -22,6 +22,11 @@ Extra-source-files:
   CHANGELOG,
   README.markdown,
   data/stylish-haskell.yaml
+
+flag no-ghc-lib
+  Default: False
+  Manual:  True
+  Description: Force dependency on ghc-lib-parser even if GHC API in the ghc package is supported
 
 Common depends
   Ghc-options:      -Wall
@@ -46,7 +51,7 @@ Common depends
     Build-depends:
       semigroups >= 0.18 && < 0.20
 
-  if impl(ghc >= 9.2.2)
+  if flag(no-ghc-lib) && impl(ghc >= 9.2.2)
     Build-depends:
       ghc >= 9.2 && < 9.3,
       ghc-boot,
