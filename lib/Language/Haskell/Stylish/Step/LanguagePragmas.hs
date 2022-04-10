@@ -19,7 +19,7 @@ import qualified Data.Text                       as T
 
 --------------------------------------------------------------------------------
 import qualified GHC.Hs                          as Hs
-import           SrcLoc                          (RealSrcSpan, realSrcSpanStart,
+import           GHC.Types.SrcLoc                (RealSrcSpan, realSrcSpanStart,
                                                   srcLocLine, srcSpanEndLine,
                                                   srcSpanStartLine)
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments  #-}
+{-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE NamedFieldPuns  #-}
@@ -20,11 +21,12 @@ import           Control.Monad                    (forM_, unless, when)
 import           Data.Function                    ((&))
 import           Data.Functor                     ((<&>))
 import           Data.List                        (sortBy)
-import           Data.Maybe                       (listToMaybe)
+import           Data.Maybe                       (isJust, listToMaybe)
 
 --------------------------------------------------------------------------------
-import           ApiAnnotation                    (AnnotationComment)
-import           BasicTypes                       (LexicalFixity (..))
+import           GHC                              (HsForAllTelescope (..),
+                                                   HsScaled (..),
+                                                   OutputableBndrFlag, RdrName)
 import           GHC.Hs.Decls                     (ConDecl (..),
                                                    DerivStrategy (..),
                                                    HsDataDefn (..), HsDecl (..),
@@ -33,17 +35,18 @@ import           GHC.Hs.Decls                     (ConDecl (..),
                                                    TyClDecl (..))
 import           GHC.Hs.Extension                 (GhcPs, NoExtField (..),
                                                    noExtCon)
-import           GHC.Hs.Types                     (ConDeclField (..),
-                                                   ForallVisFlag (..),
+import           GHC.Hs.Type                      (ConDeclField (..),
                                                    HsConDetails (..), HsContext,
                                                    HsImplicitBndrs (..),
                                                    HsTyVarBndr (..),
                                                    HsType (..), LHsQTyVars (..))
-import           RdrName                          (RdrName)
-import           SrcLoc                           (GenLocated (..), Located,
-                                                   RealLocated)
+import           GHC.Parser.Annotation            (AnnotationComment)
+import           GHC.Types.Basic                  (LexicalFixity (..))
+import           GHC.Types.SrcLoc                 (GenLocated (..), Located,
+                                                   RealLocated, unLoc)
 
 --------------------------------------------------------------------------------
+import           GHC.Utils.Outputable             (ppr, showSDocUnsafe)
 import           Language.Haskell.Stylish.Block
 import           Language.Haskell.Stylish.Editor
 import           Language.Haskell.Stylish.GHC
@@ -317,13 +320,13 @@ putName decl@MkDataDecl{..} =
     forM_ (hsq_explicit dataTypeVars) (\t -> space >> putOutputable t)
 
   where
-    firstTvar :: Maybe (Located (HsTyVarBndr GhcPs))
+    firstTvar :: Maybe (Located (HsTyVarBndr () GhcPs))
     firstTvar
       = dataTypeVars
       & hsq_explicit
       & listToMaybe
 
-    secondTvar :: Maybe (Located (HsTyVarBndr GhcPs))
+    secondTvar :: Maybe (Located (HsTyVarBndr () GhcPs))
     secondTvar
       = dataTypeVars
       & hsq_explicit
@@ -340,12 +343,12 @@ putConstructor cfg consIndent (L _ cons) = case cons of
           (comma >> space)
           (fmap putRdrName con_names)
 
-      InfixCon arg1 arg2 -> do
-        putType arg1
+      InfixCon (HsScaled _ ps1) (HsScaled _ ps2) -> do
+        putType ps1
         space
         forM_ con_names putRdrName
         space
-        putType arg2
+        putType ps2
       RecCon _ ->
         error . mconcat $
           [ "Language.Haskell.Stylish.Step.Data.putConstructor: "
@@ -357,22 +360,37 @@ putConstructor cfg consIndent (L _ cons) = case cons of
     putText "::"
     space
 
-    putForAll con_forall $ hsq_explicit con_qvars
+    putForAll con_forall con_qvars
     forM_ con_mb_cxt (putContext cfg . unLocated)
+    case con_args of
+      PrefixCon xs -> forM_ xs (\x -> do
+        putOutputable x
+        space >> putText "->" >> space
+        )
+      InfixCon _ _ -> do
+        error . mconcat $
+          [ "Language.Haskell.Stylish.Step.Data.putConstructor: "
+          , "encountered a GADT with InfixCon, should never happened"
+          ]
+      RecCon _ ->
+        error . mconcat $
+          [ "Language.Haskell.Stylish.Step.Data.putConstructor: "
+          , "encountered a GADT with record constructors, not supported yet"
+          ]
     putType con_res_ty
 
-  XConDecl x ->
-    noExtCon x
+  XConDecl x -> noExtCon x
+
   ConDeclH98{..} -> do
     putForAll con_forall con_ex_tvs
     forM_ con_mb_cxt (putContext cfg . unLocated)
     case con_args of
-      InfixCon arg1 arg2 -> do
-        putType arg1
+      InfixCon (HsScaled _ ps1) (HsScaled _ ps2) -> do
+        putType ps1
         space
         putRdrName con_name
         space
-        putType arg2
+        putType ps2
       PrefixCon xs -> do
         putRdrName con_name
         unless (null xs) space
@@ -426,10 +444,10 @@ putConstructor cfg consIndent (L _ cons) = case cons of
       -- Jump to the next declaration.
       sepDecl bracePos = newline >> spaces case (cEquals cfg, cFirstField cfg) of
         (_, Indent y) | not (cBreakSingleConstructors cfg) -> y
-        (SameLine, SameLine) -> bracePos
-        (Indent x, Indent y) -> x + y + 2
-        (SameLine, Indent y) -> bracePos + y - 2
-        (Indent x, SameLine) -> bracePos + x - 2
+        (SameLine, SameLine)                               -> bracePos
+        (Indent x, Indent y)                               -> x + y + 2
+        (SameLine, Indent y)                               -> bracePos + y - 2
+        (Indent x, SameLine)                               -> bracePos + x - 2
 
 putNewtypeConstructor :: Config -> Located (ConDecl GhcPs) -> P ()
 putNewtypeConstructor cfg (L _ cons) = case cons of
@@ -463,7 +481,8 @@ putNewtypeConstructor cfg (L _ cons) = case cons of
       , "GADT encountered in newtype"
       ]
 
-putForAll :: Located Bool -> [Located (HsTyVarBndr GhcPs)] -> P ()
+-- putForAll :: Located Bool -> [Located (GHC.LHsTyVarBndr s GhcPs)] -> P ()
+putForAll :: OutputableBndrFlag s => Located Bool -> [Located (HsTyVarBndr s GhcPs)] -> P ()
 putForAll forall ex_tvs =
   when (unLocated forall) do
     putText "forall"
@@ -471,6 +490,14 @@ putForAll forall ex_tvs =
     sep space (fmap putOutputable ex_tvs)
     dot
     space
+
+-- putForAll :: Bool -> [GHC.LHsTyVarBndr s GHC.GhcPs] -> P ()
+-- putForAll forall ex_tvs = when forall do
+--     putText "forall"
+--     space
+--     sep space $ putOutputable . unLoc <$> ex_tvs
+--     dot
+--     space
 
 putContext :: Config -> HsContext GhcPs -> P ()
 putContext Config{..} = suffix (space >> putText "=>" >> space) . \case
@@ -501,20 +528,38 @@ putConDeclField cfg = \case
 
 -- | A variant of 'putType' that takes 'cCurriedContext' into account
 putType' :: Config -> Located (HsType GhcPs) -> P ()
-putType' cfg = \case
-  L _ (HsForAllTy NoExtField vis bndrs tp) -> do
-    putText "forall"
-    space
-    sep space (fmap putOutputable bndrs)
-    putText
-      if vis == ForallVis then "->"
-      else "."
-    space
-    putType' cfg tp
-  L _ (HsQualTy NoExtField ctx tp) -> do
-    putContext cfg (unLocated ctx)
-    putType' cfg tp
-  other -> putType other
+-- putType' cfg = \case
+--   L _ (HsForAllTy NoExtField vis bndrs tp) -> do
+--     putText "forall"
+--     space
+--     sep space (fmap putOutputable bndrs)
+--     putText
+--       if vis == ForallVis then "->"
+--       else "."
+--     space
+--     putType' cfg tp
+--   L _ (HsQualTy NoExtField ctx tp) -> do
+--     putContext cfg (unLocated ctx)
+--     putType' cfg tp
+--   other -> putType other
+
+
+putType' cfg lty = case unLoc lty of
+    HsForAllTy NoExtField tele tp -> do
+        putText "forall"
+        space
+        sep space $ case tele of
+            HsForAllVis   {..} -> putOutputable . unLoc <$> hsf_vis_bndrs
+            HsForAllInvis {..} -> putOutputable . unLoc <$> hsf_invis_bndrs
+        case tele of
+            HsForAllVis   {} -> space >> putText "->"
+            HsForAllInvis {} -> putText "."
+        space
+        putType' cfg tp
+    HsQualTy NoExtField ctx tp -> do
+        forM_ ctx $ putContext cfg
+        putType' cfg tp
+    _ -> putType lty
 
 newOrData :: DataDecl -> String
 newOrData decl = if isNewtype decl then "newtype" else "data"

@@ -8,7 +8,7 @@ module Language.Haskell.Stylish.Align
 
 --------------------------------------------------------------------------------
 import           Data.List                       (nub)
-import qualified SrcLoc                          as S
+import qualified GHC.Types.SrcLoc                as S
 
 
 --------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ align maxColumns alignment
     align' a = changeLine (S.srcSpanStartLine $ aContainer a) $ \str ->
       let column = S.srcSpanEndCol $ aLeft a
           (pre, post) = splitAt column str
-      in [padRight longestLeft (trimRight pre) ++ trimLeft post] 
+      in [padRight longestLeft (trimRight pre) ++ trimLeft post]
 
 --------------------------------------------------------------------------------
 -- | Checks that all the alignables appear on a single line, and that they do

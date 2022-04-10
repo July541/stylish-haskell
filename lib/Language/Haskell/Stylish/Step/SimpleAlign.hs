@@ -1,5 +1,4 @@
 --------------------------------------------------------------------------------
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies    #-}
 module Language.Haskell.Stylish.Step.SimpleAlign
     ( Config (..)
@@ -15,7 +14,7 @@ import           Data.Foldable                   (toList)
 import           Data.List                       (foldl', foldl1', sortOn)
 import           Data.Maybe                      (fromMaybe)
 import qualified GHC.Hs                          as Hs
-import qualified SrcLoc                          as S
+import qualified GHC.Types.SrcLoc                as S
 
 
 --------------------------------------------------------------------------------
@@ -62,11 +61,11 @@ type Record = [S.Located (Hs.ConDeclField Hs.GhcPs)]
 
 
 --------------------------------------------------------------------------------
-records :: S.Located (Hs.HsModule Hs.GhcPs) -> [Record]
+records :: S.Located Hs.HsModule -> [Record]
 records modu = do
   let decls           = map S.unLoc (Hs.hsmodDecls (S.unLoc modu))
       tyClDecls       = [ tyClDecl | Hs.TyClD _ tyClDecl <- decls ]
-      dataDecls       = [ d | d@(Hs.DataDecl _ _ _ _ _)  <- tyClDecls ]
+      dataDecls       = [ d | d@(Hs.DataDecl {})  <- tyClDecls ]
       dataDefns       = map Hs.tcdDataDefn dataDecls
   d@Hs.ConDeclH98 {} <- concatMap getConDecls dataDefns
   case Hs.con_args d of
@@ -148,7 +147,7 @@ matchToAlignable (S.L matchLoc (Hs.Match _ (Hs.FunRhs name _ _) pats@(_ : _) grh
     , aRightLead = length "= "
     }
 matchToAlignable (S.L _ (Hs.XMatch x))      = Hs.noExtCon x
-matchToAlignable (S.L _ (Hs.Match _ _ _ _)) = Nothing
+matchToAlignable (S.L _ (Hs.Match {})) = Nothing
 
 
 --------------------------------------------------------------------------------
@@ -188,7 +187,7 @@ grhsToAlignable (S.L _ _)            = Nothing
 step :: Maybe Int -> Config -> Step
 step maxColumns config = makeStep "Cases" $ \ls module' ->
     let changes
-            :: (S.Located (Hs.HsModule Hs.GhcPs) -> [a])
+            :: (S.Located Hs.HsModule -> [a])
             -> (a -> [[Alignable S.RealSrcSpan]])
             -> [Change String]
         changes search toAlign =

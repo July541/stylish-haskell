@@ -1,10 +1,10 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DoAndIfThenElse #-}
+{-# LANGUAGE BlockArguments             #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DoAndIfThenElse            #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 module Language.Haskell.Stylish.Printer
   ( Printer(..)
   , PrinterConfig(..)
@@ -57,31 +57,38 @@ module Language.Haskell.Stylish.Printer
 import           Prelude                         hiding (lines)
 
 --------------------------------------------------------------------------------
-import           ApiAnnotation                   (AnnKeywordId(..), AnnotationComment(..))
-import           BasicTypes                      (PromotionFlag(..))
-import           GHC.Hs.Extension                (GhcPs, NoExtField(..))
-import           GHC.Hs.Types                    (HsType(..))
-import           Module                          (ModuleName, moduleNameString)
-import           RdrName                         (RdrName(..))
-import           SrcLoc                          (GenLocated(..), RealLocated)
-import           SrcLoc                          (Located, SrcSpan(..))
-import           SrcLoc                          (srcSpanStartLine, srcSpanEndLine)
-import           Outputable                      (Outputable)
+import           GHC                             (HsArrow (HsExplicitMult, HsLinearArrow, HsUnrestrictedArrow),
+                                                  RdrName (..))
+import           GHC.Hs.Extension                (GhcPs, NoExtField (..))
+import           GHC.Hs.Type                     (HsType (..))
+import           GHC.Parser.Annotation           (AnnKeywordId (..),
+                                                  AnnotationComment (..))
+import           GHC.Types.Basic                 (PromotionFlag (..))
+import           GHC.Types.SrcLoc                (GenLocated (..), Located,
+                                                  RealLocated, SrcSpan (..),
+                                                  UnhelpfulSpanReason (..),
+                                                  srcSpanEndLine,
+                                                  srcSpanStartLine)
+import           GHC.Unit.Module                 (ModuleName, moduleNameString)
+import           GHC.Utils.Outputable            (Outputable (ppr))
 
 --------------------------------------------------------------------------------
 import           Control.Monad                   (forM_, replicateM_)
-import           Control.Monad.Reader            (MonadReader, ReaderT(..), asks, local)
-import           Control.Monad.State             (MonadState, State)
-import           Control.Monad.State             (runState)
-import           Control.Monad.State             (get, gets, modify, put)
+import           Control.Monad.Reader            (MonadReader, ReaderT (..),
+                                                  asks, local)
+import           Control.Monad.State             (MonadState, State, get, gets,
+                                                  modify, put, runState)
 import           Data.Foldable                   (find, toList)
 import           Data.Functor                    ((<&>))
 import           Data.List                       (delete, isPrefixOf)
-import           Data.List.NonEmpty              (NonEmpty(..))
+import           Data.List.NonEmpty              (NonEmpty (..))
 
 --------------------------------------------------------------------------------
-import           Language.Haskell.Stylish.Module (Module, Lines, lookupAnnotation)
+import           GHC.Plugins                     (RdrName (..))
 import           Language.Haskell.Stylish.GHC    (showOutputable, unLocated)
+import           Language.Haskell.Stylish.Module (Lines, Module,
+                                                  lookupAnnotation)
+import Language.Haskell.Stylish.Ordering (compareSrcSpan)
 
 -- | Shorthand for 'Printer' monad
 type P = Printer
@@ -97,11 +104,11 @@ data PrinterConfig = PrinterConfig
 
 -- | State of printer
 data PrinterState = PrinterState
-  { lines :: !Lines
-  , linePos :: !Int
-  , currentLine :: !String
+  { lines           :: !Lines
+  , linePos         :: !Int
+  , currentLine     :: !String
   , pendingComments :: ![RealLocated AnnotationComment]
-  , parsedModule :: !Module
+  , parsedModule    :: !Module
   }
 
 -- | Run printer to get printed lines out of module as well as return value of monad
@@ -140,7 +147,7 @@ putOutputable = putText . showOutputable
 putAllSpanComments :: P () -> SrcSpan -> P ()
 putAllSpanComments suff = \case
   UnhelpfulSpan _ -> pure ()
-  RealSrcSpan rspan -> do
+  RealSrcSpan rspan _ -> do
     cmts <- removeComments \(L rloc _) ->
       srcSpanStartLine rloc >= srcSpanStartLine rspan &&
       srcSpanEndLine rloc <= srcSpanEndLine rspan
@@ -150,18 +157,18 @@ putAllSpanComments suff = \case
 -- | Print any comment
 putComment :: AnnotationComment -> P ()
 putComment = \case
-  AnnLineComment s -> putText s
-  AnnDocCommentNext s -> putText s
-  AnnDocCommentPrev s -> putText s
+  AnnLineComment s     -> putText s
+  AnnDocCommentNext s  -> putText s
+  AnnDocCommentPrev s  -> putText s
   AnnDocCommentNamed s -> putText s
-  AnnDocSection _ s -> putText s
-  AnnDocOptions s -> putText s
-  AnnBlockComment s -> putText s
+  AnnDocSection _ s    -> putText s
+  AnnDocOptions s      -> putText s
+  AnnBlockComment s    -> putText s
 
 -- | Given the current start line of 'SrcSpan', remove and put EOL comment for same line
 putEolComment :: SrcSpan -> P ()
 putEolComment = \case
-  RealSrcSpan rspan -> do
+  RealSrcSpan rspan _ -> do
     cmt <- removeComment \case
       L rloc (AnnLineComment s) ->
         and
@@ -205,12 +212,15 @@ putModuleName = putText . moduleNameString
 -- | Print type
 putType :: Located (HsType GhcPs) -> P ()
 putType ltp = case unLocated ltp of
-  HsFunTy NoExtField argTp funTp -> do
-    putOutputable argTp
+  HsFunTy NoExtField arrowTp f1 f2 -> do
+    putOutputable f1
     space
-    putText "->"
+    case arrowTp of
+        HsUnrestrictedArrow {} -> putText "->"
+        HsLinearArrow {}       -> putText "%1 ->"
+        HsExplicitMult {}      -> putOutputable arrowTp
     space
-    putType funTp
+    putType f2
   HsAppTy NoExtField t1 t2 ->
     putType t1 >> space >> putType t2
   HsExplicitListTy NoExtField _ xs -> do
@@ -248,7 +258,7 @@ putType ltp = case unLocated ltp of
       (comma >> space)
       (fmap putType xs)
     putText ")"
-  HsForAllTy NoExtField _ _ _ ->
+  HsForAllTy NoExtField _ _ ->
     putOutputable ltp
   HsQualTy NoExtField _ _ ->
     putOutputable ltp
@@ -281,7 +291,7 @@ putType ltp = case unLocated ltp of
 getDocstrPrev :: SrcSpan -> P (Maybe AnnotationComment)
 getDocstrPrev = \case
   UnhelpfulSpan _ -> pure Nothing
-  RealSrcSpan rspan -> do
+  RealSrcSpan rspan _ -> do
     removeComment \case
       L rloc (AnnLineComment s) ->
         and
@@ -318,7 +328,7 @@ parenthesize action = putText "(" *> action <* putText ")"
 
 -- | Add separator between each element of the given printers
 sep :: P a -> [P a] -> P ()
-sep _ [] = pure ()
+sep _ []             = pure ()
 sep s (first : rest) = first >> forM_ rest ((>>) s)
 
 -- | Prefix a printer with another one
@@ -345,15 +355,15 @@ removeLineComment line =
 --   the ones that were removed
 removeCommentTo :: SrcSpan -> P [AnnotationComment]
 removeCommentTo = \case
-  UnhelpfulSpan _ -> pure []
-  RealSrcSpan rspan -> removeCommentTo' (srcSpanStartLine rspan)
+  UnhelpfulSpan _     -> pure []
+  RealSrcSpan rspan _ -> removeCommentTo' (srcSpanStartLine rspan)
 
 -- | Removes comments from the state up to end line of 'SrcSpan' and returns
 --   the ones that were removed
 removeCommentToEnd :: SrcSpan -> P [AnnotationComment]
 removeCommentToEnd = \case
-  UnhelpfulSpan _ -> pure []
-  RealSrcSpan rspan -> removeCommentTo' (srcSpanEndLine rspan)
+  UnhelpfulSpan _     -> pure []
+  RealSrcSpan rspan _ -> removeCommentTo' (srcSpanEndLine rspan)
 
 -- | Removes comments to the line number given and returns the ones removed
 removeCommentTo' :: Int -> P [AnnotationComment]
@@ -404,8 +414,8 @@ getCurrentLineLength = fmap length getCurrentLine
 peekNextCommentPos :: P (Maybe SrcSpan)
 peekNextCommentPos = do
   gets pendingComments <&> \case
-    (L next _ : _) -> Just (RealSrcSpan next)
-    [] -> Nothing
+    (L next _ : _) -> Just (RealSrcSpan next Nothing)
+    []             -> Nothing
 
 -- | Get attached comments belonging to '[Located a]' given
 groupAttachedComments :: [Located a] -> P [([AnnotationComment], NonEmpty (Located a))]
@@ -418,10 +428,10 @@ groupAttachedComments = go
 
       let
         sameGroupOf = maybe xs \nextGroupStart ->
-          takeWhile (\(L p _)-> p < nextGroupStart) xs
+          takeWhile (\(L p _)-> p `compareSrcSpan` nextGroupStart == LT) xs
 
         restOf = maybe [] \nextGroupStart ->
-          dropWhile (\(L p _) -> p <= nextGroupStart) xs
+          dropWhile (\(L p _) -> (p `compareSrcSpan` nextGroupStart) `elem` [EQ, LT]) xs
 
       restGroups <- go (restOf nextGroupStartM)
       pure $ (comments, L rspan x :| sameGroupOf nextGroupStartM) : restGroups

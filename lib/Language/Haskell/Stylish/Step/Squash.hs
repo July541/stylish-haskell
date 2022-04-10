@@ -10,22 +10,20 @@ module Language.Haskell.Stylish.Step.Squash
 --------------------------------------------------------------------------------
 import           Data.Maybe                      (mapMaybe)
 import qualified GHC.Hs                          as Hs
-import qualified SrcLoc                          as S
+import qualified GHC.Types.SrcLoc                as S
 
 
 --------------------------------------------------------------------------------
+import           GHC.Types.SrcLoc                (RealSrcSpan,
+                                                  SrcSpan (RealSrcSpan), getLoc)
 import           Language.Haskell.Stylish.Editor
 import           Language.Haskell.Stylish.Step
 import           Language.Haskell.Stylish.Util
 
 
 --------------------------------------------------------------------------------
-squash
-    :: (S.HasSrcSpan l, S.HasSrcSpan r)
-    => l -> r -> Maybe (Change String)
-squash left right = do
-  lAnn <- toRealSrcSpan $ S.getLoc left
-  rAnn <- toRealSrcSpan $ S.getLoc right
+squash :: RealSrcSpan -> RealSrcSpan -> Maybe (Change String)
+squash lAnn rAnn = do
   if S.srcSpanEndLine lAnn == S.srcSpanStartLine rAnn ||
       S.srcSpanEndLine lAnn + 1 == S.srcSpanStartLine rAnn
     then Just $
@@ -39,24 +37,35 @@ squash left right = do
 squashFieldDecl :: Hs.ConDeclField Hs.GhcPs -> Maybe (Change String)
 squashFieldDecl (Hs.ConDeclField _ names type' _)
   | null names = Nothing
-  | otherwise  = squash (last names) type'
-squashFieldDecl (Hs.XConDeclField x) = Hs.noExtCon x
+  | Just l <- srcSpanToRealSrcSpan $ getLoc (last names)
+  , Just r <- srcSpanToRealSrcSpan $ getLoc type'
+    = squash l r
+squashFieldDecl _ = Nothing
+
+
+srcSpanToRealSrcSpan :: SrcSpan -> Maybe RealSrcSpan
+srcSpanToRealSrcSpan (RealSrcSpan ss _) = Just ss
+srcSpanToRealSrcSpan _                  = Nothing
 
 
 --------------------------------------------------------------------------------
 squashMatch :: Hs.Match Hs.GhcPs (Hs.LHsExpr Hs.GhcPs) -> Maybe (Change String)
 squashMatch (Hs.Match _ (Hs.FunRhs name _ _) [] grhss) = do
     body <- unguardedRhsBody grhss
-    squash name body
+    l <- srcSpanToRealSrcSpan $ getLoc name
+    r <- srcSpanToRealSrcSpan $ getLoc body
+    squash l r
 squashMatch (Hs.Match _ _ pats grhss) = do
     body <- unguardedRhsBody grhss
-    squash (last pats) body
+    l <- srcSpanToRealSrcSpan $ getLoc (last pats)
+    r <- srcSpanToRealSrcSpan $ getLoc body
+    squash l r
 squashMatch (Hs.XMatch x) = Hs.noExtCon x
 
 
 --------------------------------------------------------------------------------
 step :: Step
-step = makeStep "Squash" $ \ls (module') ->
+step = makeStep "Squash" $ \ls module' ->
     let changes =
             mapMaybe squashFieldDecl (everything module') ++
             mapMaybe squashMatch (everything module') in

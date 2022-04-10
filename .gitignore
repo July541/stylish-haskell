@@ -13,10 +13,12 @@
 .hsenv
 .stack-work
 .stack-work/
+.vscode
 cabal-dev
 cabal.config
 cabal.sandbox.config
 cabal.sandbox.config
-cabal.project.local
+cabal.project.local*
 dist
 /dist-newstyle/
+hie.yaml

@@ -1,4 +1,4 @@
-{-# language LambdaCase #-}
+{-# LANGUAGE LambdaCase #-}
 
 --------------------------------------------------------------------------------
 -- | This module provides you with a line-based editor. It's main feature is

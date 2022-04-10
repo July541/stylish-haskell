@@ -12,7 +12,7 @@ import qualified Data.Map                                      as M
 import           Data.Maybe                                    (maybeToList)
 import           GHC.Hs.Binds
 import           GHC.Hs.Extension                              (GhcPs)
-import           GHC.Hs.Types
+import           GHC.Hs.Type
 --------------------------------------------------------------------------------
 import           Language.Haskell.Stylish.Block
 import           Language.Haskell.Stylish.Editor

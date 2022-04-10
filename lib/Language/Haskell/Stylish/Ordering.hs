@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Language.Haskell.Stylish.Ordering
     ( compareLIE
+    , compareSrcSpan
     , compareWrappedName
     , unwrapName
     ) where
@@ -13,14 +14,14 @@ module Language.Haskell.Stylish.Ordering
 --------------------------------------------------------------------------------
 import           Data.Char                    (isUpper)
 import           Data.Ord                     (comparing)
+import           GHC                          (RdrName, SrcSpan (..))
 import           GHC.Hs
-import           RdrName                      (RdrName)
-import           SrcLoc                       (unLoc)
+import           GHC.Types.SrcLoc             (unLoc)
 
 
 --------------------------------------------------------------------------------
+import           GHC.Utils.Outputable         (Outputable)
 import           Language.Haskell.Stylish.GHC (showOutputable)
-import           Outputable                   (Outputable)
 
 
 --------------------------------------------------------------------------------
@@ -59,3 +60,16 @@ nameKey n = case showOutputable n of
     o@('(' : _)             -> (2, o)
     o@(o0 : _) | isUpper o0 -> (0, o)
     o                       -> (1, o)
+
+-- | Compare two `SrcSpan`, since ghc9.0 removed `Ord` instance for `SrcSpan`
+compareSrcSpan :: SrcSpan -> SrcSpan -> Ordering
+compareSrcSpan s1 s2 = case s1 of
+  RealSrcSpan ss1 bf1 -> case s2 of
+    RealSrcSpan ss2 bf2 -> case ss1 `compare` ss2 of
+      LT -> LT
+      EQ -> bf1 `compare` bf2
+      GT -> GT
+    UnhelpfulSpan _ -> GT
+  UnhelpfulSpan _ -> case s2 of
+    RealSrcSpan _ _ -> LT
+    UnhelpfulSpan _ -> EQ

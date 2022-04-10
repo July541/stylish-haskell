@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
---------------------------------------------------------------------------------
 module Language.Haskell.Stylish.Parse
   ( parseModule
   ) where
@@ -11,25 +9,25 @@ import           Data.Maybe                      (fromMaybe, listToMaybe)
 import           System.IO.Unsafe                (unsafePerformIO)
 
 --------------------------------------------------------------------------------
-import           Bag                             (bagToList)
-import qualified DynFlags                        as GHC
-import qualified ErrUtils                        as GHC
-import           FastString                      (mkFastString)
+import           GHC.Data.Bag                    (bagToList)
+import           GHC.Data.FastString             (mkFastString)
+import qualified GHC.Driver.Session              as GHC
 import qualified GHC.Hs                          as GHC
 import qualified GHC.LanguageExtensions          as GHC
-import qualified HeaderInfo                      as GHC
-import qualified HscTypes                        as GHC
-import           Lexer                           (ParseResult (..))
-import           Lexer                           (mkPState, unP)
-import qualified Lexer                           as GHC
-import qualified Panic                           as GHC
-import qualified Parser                          as GHC
-import           SrcLoc                          (mkRealSrcLoc)
-import qualified SrcLoc                          as GHC
-import           StringBuffer                    (stringToStringBuffer)
-import qualified StringBuffer                    as GHC
+import qualified GHC.Utils.Error                 as GHC
+import           GHC.Data.StringBuffer           (stringToStringBuffer)
+import qualified GHC.Data.StringBuffer           as GHC
+import qualified GHC.Parser                      as GHC
+import           GHC.Parser.Lexer                (ParseResult (..), mkPState,
+                                                  unP)
+import qualified GHC.Parser.Lexer                as GHC
+import           GHC.Types.SrcLoc                (mkRealSrcLoc)
+import qualified GHC.Types.SrcLoc                as GHC
+import qualified GHC.Utils.Panic                 as GHC
 
 --------------------------------------------------------------------------------
+import qualified GHC.Driver.Types                as GHC
+import qualified GHC.Parser.Header               as GHC
 import           Language.Haskell.Stylish.GHC    (baseDynFlags)
 import           Language.Haskell.Stylish.Module
 
@@ -64,7 +62,7 @@ parseModule exts fp string =
       & runParser dynFlags
       & toModule dynFlags
   where
-    toModule :: GHC.DynFlags -> GHC.ParseResult (GHC.Located (GHC.HsModule GHC.GhcPs)) -> Either String Module
+    toModule :: GHC.DynFlags -> GHC.ParseResult (GHC.Located GHC.HsModule) -> Either String Module
     toModule dynFlags res = case res of
       POk ps m ->
         Right (makeModule ps m)
@@ -93,7 +91,7 @@ parseModule exts fp string =
     filePath =
       fromMaybe "<interactive>" fp
 
-    runParser :: GHC.DynFlags -> String -> GHC.ParseResult (GHC.Located (GHC.HsModule GHC.GhcPs))
+    runParser :: GHC.DynFlags -> String -> GHC.ParseResult (GHC.Located GHC.HsModule)
     runParser flags str =
       let
         filename = mkFastString filePath

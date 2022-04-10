@@ -30,7 +30,7 @@ import           System.IO.Error                (isAlreadyExistsError)
 import           System.Random                  (randomIO)
 import           Test.HUnit                     (Assertion, assertFailure,
                                                  (@=?))
-import           Outputable                     (showSDoc)
+import           GHC.Utils.Outputable                     (showSDoc)
 import           Data.Data                      (Data(..))
 
 --------------------------------------------------------------------------------

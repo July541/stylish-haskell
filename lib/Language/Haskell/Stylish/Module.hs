@@ -1,11 +1,11 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE BlockArguments             #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE ViewPatterns               #-}
 module Language.Haskell.Stylish.Module
   ( -- * Data types
     Module (..)
@@ -44,31 +44,32 @@ module Language.Haskell.Stylish.Module
   ) where
 
 --------------------------------------------------------------------------------
-import           Data.Function                   ((&), on)
-import           Data.Functor                    ((<&>))
-import           Data.Generics                   (Typeable, everything, mkQ)
-import           Data.Maybe                      (mapMaybe)
-import           Data.Map                        (Map)
-import qualified Data.Map                        as Map
-import           Data.List                       (nubBy, sort)
-import           Data.List.NonEmpty              (NonEmpty (..), nonEmpty)
-import           Data.Text                       (Text)
-import qualified Data.Text                       as T
-import           Data.Data                       (Data)
+import           Data.Data                    (Data)
+import           Data.Function                (on, (&))
+import           Data.Functor                 ((<&>))
+import           Data.Generics                (Typeable, everything, mkQ)
+import           Data.List                    (nubBy, sort)
+import           Data.List.NonEmpty           (NonEmpty (..), nonEmpty)
+import           Data.Map                     (Map)
+import qualified Data.Map                     as Map
+import           Data.Maybe                   (mapMaybe)
+import           Data.Text                    (Text)
+import qualified Data.Text                    as T
 
 --------------------------------------------------------------------------------
-import qualified ApiAnnotation                   as GHC
-import qualified Lexer                           as GHC
-import           GHC.Hs                          (ImportDecl(..), ImportDeclQualifiedStyle(..))
-import qualified GHC.Hs                          as GHC
-import           GHC.Hs.Extension                (GhcPs)
-import           GHC.Hs.Decls                    (LHsDecl)
-import           Outputable                      (Outputable)
-import           SrcLoc                          (GenLocated(..), RealLocated)
-import           SrcLoc                          (RealSrcSpan(..), SrcSpan(..))
-import           SrcLoc                          (Located)
-import qualified SrcLoc                          as GHC
-import qualified Module                          as GHC
+import           GHC.Hs                       (ImportDecl (..),
+                                               ImportDeclQualifiedStyle (..))
+import qualified GHC.Hs                       as GHC
+import           GHC.Hs.Decls                 (LHsDecl)
+import           GHC.Hs.Extension             (GhcPs)
+import qualified GHC.Parser.Annotation        as GHC
+import qualified GHC.Parser.Lexer             as GHC
+import           GHC.Types.SrcLoc             (GenLocated (..), Located,
+                                               RealLocated, RealSrcSpan (..),
+                                               SrcSpan (..))
+import qualified GHC.Types.SrcLoc             as GHC
+import qualified GHC.Unit.Module              as GHC
+import           GHC.Utils.Outputable         (Outputable)
 
 --------------------------------------------------------------------------------
 import           Language.Haskell.Stylish.GHC
@@ -80,10 +81,10 @@ type Lines = [String]
 --------------------------------------------------------------------------------
 -- | Concrete module type
 data Module = Module
-  { parsedComments :: [GHC.RealLocated GHC.AnnotationComment]
-  , parsedAnnotations :: [(GHC.ApiAnnKey, [GHC.SrcSpan])]
-  , parsedAnnotSrcs :: Map RealSrcSpan [GHC.AnnKeywordId]
-  , parsedModule :: GHC.Located (GHC.HsModule GhcPs)
+  { parsedComments    :: [GHC.RealLocated GHC.AnnotationComment]
+  , parsedAnnotations :: [(GHC.ApiAnnKey, [GHC.RealSrcSpan])]
+  , parsedAnnotSrcs   :: Map RealSrcSpan [GHC.AnnKeywordId]
+  , parsedModule      :: GHC.Located GHC.HsModule
   } deriving (Data)
 
 -- | Declarations in module
@@ -107,7 +108,7 @@ canMergeImport (Import i0) (Import i1) = and $ fmap (\f -> f i0 i1)
   where
     hasMergableQualified QualifiedPre QualifiedPost = True
     hasMergableQualified QualifiedPost QualifiedPre = True
-    hasMergableQualified q0 q1 = q0 == q1
+    hasMergableQualified q0 q1                      = q0 == q1
 
 instance Eq Import where
   i0 == i1 = canMergeImport i0 i1 && hasSameImports (unImport i0) (unImport i1)
@@ -126,22 +127,23 @@ newtype Comments = Comments [GHC.RealLocated GHC.AnnotationComment]
 
 -- | A module header is its name, exports and haddock docstring
 data ModuleHeader = ModuleHeader
-  { name :: Maybe (GHC.Located GHC.ModuleName)
-  , exports :: Maybe (GHC.Located [GHC.LIE GhcPs])
+  { name     :: Maybe (GHC.Located GHC.ModuleName)
+  , exports  :: Maybe (GHC.Located [GHC.LIE GhcPs])
   , haddocks :: Maybe GHC.LHsDocString
   }
 
 -- | Create a module from GHC internal representations
-makeModule :: GHC.PState -> GHC.Located (GHC.HsModule GHC.GhcPs) -> Module
+makeModule :: GHC.PState -> GHC.Located (GHC.HsModule) -> Module
 makeModule pstate = Module comments annotations annotationMap
   where
     comments
       = sort
-      . filterRealLocated
+      -- . filterRealLocated
       $ GHC.comment_q pstate ++ (GHC.annotations_comments pstate >>= snd)
 
+    -- filterRealLocated = undefined
     filterRealLocated = mapMaybe \case
-      GHC.L (GHC.RealSrcSpan s) e -> Just (GHC.L s e)
+      GHC.L (GHC.RealSrcSpan s _) e -> Just (GHC.L s e)
       GHC.L (GHC.UnhelpfulSpan _) _ -> Nothing
 
     annotations
@@ -153,8 +155,8 @@ makeModule pstate = Module comments annotations annotationMap
       & Map.fromListWith (++)
 
     x = \case
-      ((RealSrcSpan rspan, annot), _) -> Just (rspan, [annot])
-      _ -> Nothing
+      ((rspan, annot), _) -> Just (rspan, [annot])
+      -- _ -> Nothing
 
 -- | Get all declarations in module
 moduleDecls :: Module -> Decls
@@ -246,7 +248,7 @@ moduleHeader (Module _ _ _ (GHC.L _ m)) = ModuleHeader
 
 -- | Query for annotations associated with a 'SrcSpan'
 lookupAnnotation :: SrcSpan -> Module -> [GHC.AnnKeywordId]
-lookupAnnotation (RealSrcSpan rspan) m = Map.findWithDefault [] rspan (parsedAnnotSrcs m)
+lookupAnnotation (RealSrcSpan rspan _) m = Map.findWithDefault [] rspan (parsedAnnotSrcs m)
 lookupAnnotation (UnhelpfulSpan _) _ = []
 
 -- | Query the module AST using @f@
@@ -279,5 +281,5 @@ rawComments :: Comments -> [GHC.RealLocated GHC.AnnotationComment]
 rawComments (Comments xs) = xs
 
 -- | Getter for internal module annotation representation
-rawModuleAnnotations :: Module -> [(GHC.ApiAnnKey, [GHC.SrcSpan])]
+rawModuleAnnotations :: Module -> [(GHC.ApiAnnKey, [GHC.RealSrcSpan])]
 rawModuleAnnotations = parsedAnnotations

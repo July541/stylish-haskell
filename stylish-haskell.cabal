@@ -1,6 +1,6 @@
 Cabal-version: 2.4
 Name:          stylish-haskell
-Version:       0.13.0.0
+Version:       0.13.1.0
 Synopsis:      Haskell code prettifier
 Homepage:      https://github.com/haskell/stylish-haskell
 License:       BSD-3-Clause
@@ -23,10 +23,31 @@ Extra-source-files:
   README.markdown,
   data/stylish-haskell.yaml
 
-Library
-  Hs-source-dirs:   lib
+Common depends
   Ghc-options:      -Wall
   Default-language: Haskell2010
+
+  Build-depends:
+    aeson             >= 0.6    && < 2.1,
+    base              >= 4.8    && < 5,
+    bytestring        >= 0.9    && < 0.12,
+    Cabal             >= 3.4    && < 3.7,
+    containers        >= 0.3    && < 0.7,
+    directory         >= 1.2.3  && < 1.4,
+    filepath          >= 1.1    && < 1.5,
+    file-embed        >= 0.0.10 && < 0.1,
+    mtl               >= 2.0    && < 2.3,
+    syb               >= 0.3    && < 0.8,
+    text              >= 1.2    && < 1.3,
+    HsYAML-aeson      >=0.2.0   && < 0.3,
+    HsYAML            >=0.2.0   && < 0.3,
+    ghc               >= 9.0    && < 9.1,
+    ghc-boot,
+    ghc-lib-parser-ex >= 9.0    && < 9.1
+
+Library
+  Import:         depends
+  Hs-source-dirs: lib
 
   Exposed-modules:
     Language.Haskell.Stylish
@@ -60,57 +81,21 @@ Library
   Autogen-modules:
     Paths_stylish_haskell
 
-  Build-depends:
-    aeson            >= 0.6    && < 1.6,
-    base             >= 4.8    && < 5,
-    bytestring       >= 0.9    && < 0.11,
-    Cabal            >= 2.4    && < 3.3,
-    containers       >= 0.3    && < 0.7,
-    directory        >= 1.2.3  && < 1.4,
-    filepath         >= 1.1    && < 1.5,
-    file-embed       >= 0.0.10 && < 0.1,
-    ghc-lib-parser   >= 8.10   && < 8.12,
-    mtl              >= 2.0    && < 2.3,
-    syb              >= 0.3    && < 0.8,
-    text             >= 1.2    && < 1.3,
-    HsYAML-aeson     >=0.2.0   && < 0.3,
-    HsYAML           >=0.2.0   && < 0.3
-
-  if impl(ghc < 8.0)
-    Build-depends:
-      semigroups     >= 0.18   && < 0.20
-
 Executable stylish-haskell
-  Ghc-options:      -Wall
-  Hs-source-dirs:   src
-  Main-is:          Main.hs
-  Default-language: Haskell2010
+  Import:         depends
+  Hs-source-dirs: src
+  Main-is:        Main.hs
 
   Build-depends:
     stylish-haskell,
     strict               >= 0.3  && < 0.5,
-    optparse-applicative >= 0.12 && < 0.17,
-    -- Copied from regular dependencies...
-    aeson            >= 0.6    && < 1.6,
-    base             >= 4.8    && < 5,
-    bytestring       >= 0.9    && < 0.11,
-    Cabal            >= 2.4    && < 3.3,
-    containers       >= 0.3    && < 0.7,
-    directory        >= 1.2.3  && < 1.4,
-    filepath         >= 1.1    && < 1.5,
-    file-embed       >= 0.0.10 && < 0.1,
-    ghc-lib-parser   >= 8.10   && < 8.12,
-    mtl              >= 2.0    && < 2.3,
-    syb              >= 0.3    && < 0.8,
-    HsYAML-aeson     >=0.2.0   && < 0.3,
-    HsYAML           >=0.2.0   && < 0.3
+    optparse-applicative >= 0.12 && < 0.18
 
 Test-suite stylish-haskell-tests
-  Ghc-options:      -Wall
-  Hs-source-dirs:   tests lib
-  Main-is:          TestSuite.hs
-  Type:             exitcode-stdio-1.0
-  Default-language: Haskell2010
+  Import:         depends
+  Hs-source-dirs: tests lib
+  Main-is:        TestSuite.hs
+  Type:           exitcode-stdio-1.0
 
   Other-modules:
     Language.Haskell.Stylish
@@ -154,29 +139,12 @@ Test-suite stylish-haskell-tests
     Language.Haskell.Stylish.Verbose
     Paths_stylish_haskell
 
-  Autogen-modules:
-    Paths_stylish_haskell
-
   Build-depends:
-    HUnit                >= 1.2 && < 1.7,
-    test-framework       >= 0.4 && < 0.9,
-    test-framework-hunit >= 0.2 && < 0.4,
+    stylish-haskell,
+    HUnit                >= 1.2   && < 1.7,
     random               >= 1.1,
-    -- Copied from regular dependencies...
-    aeson            >= 0.6    && < 1.6,
-    base             >= 4.8    && < 5,
-    bytestring       >= 0.9    && < 0.11,
-    Cabal            >= 2.4    && < 3.3,
-    containers       >= 0.3    && < 0.7,
-    directory        >= 1.2.3  && < 1.4,
-    filepath         >= 1.1    && < 1.5,
-    file-embed       >= 0.0.10 && < 0.1,
-    ghc-lib-parser   >= 8.10   && < 8.12,
-    mtl              >= 2.0    && < 2.3,
-    syb              >= 0.3    && < 0.8,
-    text             >= 1.2    && < 1.3,
-    HsYAML-aeson     >=0.2.0   && < 0.3,
-    HsYAML           >=0.2.0   && < 0.3
+    test-framework       >= 0.4   && < 0.9,
+    test-framework-hunit >= 0.2   && < 0.4,
 
 Source-repository head
   Type:     git

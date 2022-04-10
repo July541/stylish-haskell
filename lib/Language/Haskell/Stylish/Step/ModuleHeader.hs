@@ -9,9 +9,8 @@ module Language.Haskell.Stylish.Step.ModuleHeader
   ) where
 
 --------------------------------------------------------------------------------
-import           ApiAnnotation                         (AnnKeywordId (..),
-                                                        AnnotationComment (..))
-import           Control.Monad                         (forM_, join, when)
+import           Control.Monad                         (forM_, join, unless,
+                                                        when)
 import           Data.Bifunctor                        (second)
 import           Data.Foldable                         (find, toList)
 import           Data.Function                         ((&))
@@ -22,13 +21,15 @@ import           Data.Maybe                            (isJust, listToMaybe)
 import qualified GHC.Hs.Doc                            as GHC
 import           GHC.Hs.Extension                      (GhcPs)
 import qualified GHC.Hs.ImpExp                         as GHC
-import qualified Module                                as GHC
-import           SrcLoc                                (GenLocated (..),
+import           GHC.Parser.Annotation                 (AnnKeywordId (..),
+                                                        AnnotationComment (..))
+import           GHC.Types.SrcLoc                      (GenLocated (..),
                                                         Located, RealLocated,
+                                                        RealSrcSpan,
                                                         SrcSpan (..),
                                                         srcSpanEndLine,
                                                         srcSpanStartLine, unLoc)
-import           Util                                  (notNull)
+import qualified GHC.Unit.Module                       as GHC
 
 --------------------------------------------------------------------------------
 import           Language.Haskell.Stylish.Block
@@ -107,7 +108,7 @@ printModuleHeader maxCols conf ls m =
     exportsBlock =
       join $ adjustOffsetFrom <$> nameBlock <*> getBlock exports
 
-    whereM :: Maybe SrcSpan
+    whereM :: Maybe RealSrcSpan
     whereM
       = annotations
       & filter (\(((_, w), _)) -> w == AnnWhere)
@@ -121,11 +122,8 @@ printModuleHeader maxCols conf ls m =
       . overlapping
       $ [w] <> toList nameBlock <> toList exportsBlock
 
-    toLineBlock :: SrcSpan -> Block a
-    toLineBlock (RealSrcSpan s) = Block (srcSpanStartLine s) (srcSpanEndLine s)
-    toLineBlock s
-      = error
-      $ "'where' block was not a RealSrcSpan" <> show s
+    toLineBlock :: RealSrcSpan -> Block a
+    toLineBlock (s) = Block (srcSpanStartLine s) (srcSpanEndLine s)
 
     whereBlock
       = whereM
@@ -206,19 +204,19 @@ printHeader conf mname mexps _ = do
 removeModuleComment :: SrcSpan -> P (Maybe AnnotationComment)
 removeModuleComment = \case
   UnhelpfulSpan _ -> pure Nothing
-  RealSrcSpan rspan ->
+  RealSrcSpan rspan _ ->
     removeLineComment (srcSpanStartLine rspan)
 
 attachEolComment :: SrcSpan -> P ()
 attachEolComment = \case
   UnhelpfulSpan _ -> pure ()
-  RealSrcSpan rspan ->
+  RealSrcSpan rspan _ ->
     removeLineComment (srcSpanStartLine rspan) >>= mapM_ \c -> space >> putComment c
 
 attachEolCommentEnd :: SrcSpan -> P ()
 attachEolCommentEnd = \case
   UnhelpfulSpan _ -> pure ()
-  RealSrcSpan rspan ->
+  RealSrcSpan rspan _ ->
     removeLineComment (srcSpanEndLine rspan) >>= mapM_ \c -> space >> putComment c
 
 printSingleLineExportList :: Config -> Located [GHC.LIE GhcPs] -> P ()
@@ -239,7 +237,7 @@ printMultiLineExportList
      -> P ()
 printMultiLineExportList conf (L srcLoc exportsWithComments) = do
   newline
-  doIndent >> putText firstChar >> when (notNull exportsWithComments) space
+  doIndent >> putText firstChar >> unless (null exportsWithComments) space
   printExports exportsWithComments
 
   putText ")" >> space >> putText "where" >> attachEolCommentEnd srcLoc

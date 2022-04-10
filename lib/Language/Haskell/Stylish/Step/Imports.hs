@@ -16,52 +16,54 @@ module Language.Haskell.Stylish.Step.Imports
   ) where
 
 --------------------------------------------------------------------------------
-import           Control.Monad                   (forM_, when, void)
-import           Data.Function                   ((&), on)
-import           Data.Functor                    (($>))
-import           Data.Foldable                   (toList)
-import           Data.Maybe                      (isJust)
-import           Data.List                       (sortBy)
-import           Data.List.NonEmpty              (NonEmpty(..))
-import qualified Data.List.NonEmpty              as NonEmpty
-import qualified Data.Map                        as Map
-import qualified Data.Set                        as Set
+import           Control.Monad                     (forM_, void, when)
+import           Data.Foldable                     (toList)
+import           Data.Function                     (on, (&))
+import           Data.Functor                      (($>))
+import           Data.List                         (sortBy)
+import           Data.List.NonEmpty                (NonEmpty (..))
+import qualified Data.List.NonEmpty                as NonEmpty
+import qualified Data.Map                          as Map
+import           Data.Maybe                        (isJust)
+import qualified Data.Set                          as Set
 
 
 --------------------------------------------------------------------------------
-import           BasicTypes                      (StringLiteral (..),
-                                                  SourceText (..))
-import qualified FastString                      as FS
-import           GHC.Hs.Extension                (GhcPs)
-import qualified GHC.Hs.Extension                as GHC
+import           GHC                               (RdrName)
+import qualified GHC.Data.FastString               as FS
+import           GHC.Hs.Extension                  (GhcPs)
+import qualified GHC.Hs.Extension                  as GHC
 import           GHC.Hs.ImpExp
-import           Module                          (moduleNameString)
-import           RdrName                         (RdrName)
-import           SrcLoc                          (Located, GenLocated(..), unLoc)
+import           GHC.Types.Basic                   (SourceText (..),
+                                                    StringLiteral (..))
+import           GHC.Types.SrcLoc                  (GenLocated (..), Located,
+                                                    unLoc)
+import           GHC.Unit.Module                   (IsBootInterface (IsBoot),
+                                                    moduleNameString)
 
 
 --------------------------------------------------------------------------------
 import           Language.Haskell.Stylish.Block
+import           Language.Haskell.Stylish.Editor
+import           Language.Haskell.Stylish.GHC
 import           Language.Haskell.Stylish.Module
 import           Language.Haskell.Stylish.Ordering
 import           Language.Haskell.Stylish.Printer
 import           Language.Haskell.Stylish.Step
-import           Language.Haskell.Stylish.Editor
-import           Language.Haskell.Stylish.GHC
 import           Language.Haskell.Stylish.Util
 
 
 --------------------------------------------------------------------------------
 data Options = Options
-    { importAlign     :: ImportAlign
-    , listAlign       :: ListAlign
-    , padModuleNames  :: Bool
-    , longListAlign   :: LongListAlign
-    , emptyListAlign  :: EmptyListAlign
-    , listPadding     :: ListPadding
-    , separateLists   :: Bool
-    , spaceSurround   :: Bool
-    , postQualified   :: Bool
+    { importAlign    :: ImportAlign
+    , listAlign      :: ListAlign
+    , padModuleNames :: Bool
+    , longListAlign  :: LongListAlign
+    , emptyListAlign :: EmptyListAlign
+    , listPadding    :: ListPadding
+    , separateLists  :: Bool
+    , spaceSurround  :: Bool
+    , postQualified  :: Bool
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -229,11 +231,11 @@ printQualified Options{..} padNames stats (L _ decl) = do
       -- Since we might need to output the import module name several times, we
       -- need to save it to a variable:
       wrapPrefix <- case listAlign of
-        AfterAlias -> pure $ replicate (afterAliasPosition + 1) ' '
-        WithAlias -> pure $ replicate (beforeAliasPosition + 1) ' '
-        Repeat -> fmap (++ " (") getCurrentLine
+        AfterAlias     -> pure $ replicate (afterAliasPosition + 1) ' '
+        WithAlias      -> pure $ replicate (beforeAliasPosition + 1) ' '
+        Repeat         -> fmap (++ " (") getCurrentLine
         WithModuleName -> pure $ replicate (moduleNamePosition + offset) ' '
-        NewLine -> pure $ replicate offset ' '
+        NewLine        -> pure $ replicate offset ' '
 
       let -- Helper
           doSpaceSurround = when spaceSurround space
@@ -265,17 +267,17 @@ printQualified Options{..} padNames stats (L _ decl) = do
                 void wprefix
                 case listAlign of
                   -- '(' already included in repeat
-                  Repeat         -> pure ()
+                  Repeat                      -> pure ()
                   -- Print the much needed '('
-                  _ | start      -> putText "(" >> doSpaceSurround
+                  _ | start                   -> putText "(" >> doSpaceSurround
                   -- Don't bother aligning if we're not in inline mode.
                   _ | longListAlign /= Inline -> pure ()
                   -- 'Inline + AfterAlias' is really where we want to be careful
                   -- with spacing.
-                  AfterAlias -> space >> doSpaceSurround
-                  WithModuleName -> pure ()
-                  WithAlias -> pure ()
-                  NewLine -> pure ()
+                  AfterAlias                  -> space >> doSpaceSurround
+                  WithModuleName              -> pure ()
+                  WithAlias                   -> pure ()
+                  NewLine                     -> pure ()
                 imp
                 if end then doSpaceSurround >> putText ")" else comma)
 
@@ -352,9 +354,9 @@ printImport _ (XIE ext) =
 --------------------------------------------------------------------------------
 printIeWrappedName :: LIEWrappedName RdrName -> P ()
 printIeWrappedName lie = unLocated lie & \case
-  IEName n -> putRdrName n
+  IEName n    -> putRdrName n
   IEPattern n -> putText "pattern" >> space >> putRdrName n
-  IEType n -> putText "type" >> space >> putRdrName n
+  IEType n    -> putText "type" >> space >> putRdrName n
 
 mergeImports :: NonEmpty (Located Import) -> NonEmpty (Located Import)
 mergeImports (x :| []) = x :| []
@@ -430,9 +432,8 @@ isHiding
   . rawImport
 
 isSource :: Import -> Bool
-isSource
-  = ideclSource
-  . rawImport
+isSource i
+  = (ideclSource . rawImport) i == IsBoot
 
 isSafe :: Import -> Bool
 isSafe
@@ -456,7 +457,7 @@ prepareImportList =
     -- will be able to merge everything into that entry.  Exotic imports can
     -- mess this up, though.  So they end up in the tail of the list.
     (\(x :| xs) (y :| ys) -> case ieMerge (unLocated x) (unLocated y) of
-      Just z -> (x $> z) :| (xs ++ ys)  -- Keep source from `x`
+      Just z  -> (x $> z) :| (xs ++ ys)  -- Keep source from `x`
       Nothing -> x :| (xs ++ y : ys))
     [(ieName $ unLocated imp, imp :| []) | imp <- imports0]
 

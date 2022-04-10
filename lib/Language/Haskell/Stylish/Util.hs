@@ -40,8 +40,8 @@ import           Data.Maybe                    (maybeToList)
 import           Data.Typeable                 (cast)
 import           Debug.Trace                   (trace)
 import qualified GHC.Hs                        as Hs
-import qualified Outputable
-import qualified SrcLoc                        as S
+import qualified GHC.Types.SrcLoc              as S
+import qualified GHC.Utils.Outputable          as Outputable
 
 
 --------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ infoPoints :: [S.Located pass] -> [((Int, Int), (Int, Int))]
 infoPoints = fmap (helper . S.getLoc)
   where
     helper :: S.SrcSpan -> ((Int, Int), (Int, Int))
-    helper (S.RealSrcSpan s) = do
+    helper (S.RealSrcSpan s _) = do
                let
                 start = S.realSrcSpanStart s
                 end = S.realSrcSpanEnd s
@@ -203,8 +203,8 @@ withTail f (x : xs) = x : map f xs
 -- first and last element.
 flagEnds :: [a] -> [(a, Bool, Bool)]
 flagEnds = \case
-    [] -> []
-    [x] -> [(x, True, True)]
+    []         -> []
+    [x]        -> [(x, True, True)]
     x : y : zs -> (x, True, False) : go (y : zs)
   where
     go (x : y : zs) = (x, False, False) : go (y : zs)
@@ -226,8 +226,8 @@ traceOutputableM title x = traceOutputable title x $ pure ()
 --------------------------------------------------------------------------------
 -- take the (Maybe) RealSrcSpan out of the SrcSpan
 toRealSrcSpan :: S.SrcSpan -> Maybe S.RealSrcSpan
-toRealSrcSpan (S.RealSrcSpan s) = Just s
-toRealSrcSpan _                 = Nothing
+toRealSrcSpan (S.RealSrcSpan s _) = Just s
+toRealSrcSpan _                   = Nothing
 
 
 --------------------------------------------------------------------------------
